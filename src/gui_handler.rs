@@ -50,7 +50,7 @@ impl MyApp {
                 egui::ViewportBuilder::default()
                     .with_title("Create new database")
                     .with_inner_size([720.0, 320.0]),
-                |ui, class| {
+                |ui, _class| {
                     egui::CentralPanel::default().show_inside(ui, |ui| {
                         if self.new_db_page == 1 {
                             ui.label("Password");
@@ -84,10 +84,10 @@ impl MyApp {
                             ui.label("Database Name ");
                             ui.text_edit_singleline(&mut self.new_db_name);
                             ui.horizontal(|ui| {
-                                if (ui.button("Cancel").clicked()) {
+                                if ui.button("Cancel").clicked() {
                                     self.show_new_db_viewport = false;
                                 }
-                                if (ui.button("Continue").clicked()) {
+                                if ui.button("Continue").clicked() {
                                     self.new_db_page += 1;
                                 }
                             });
@@ -113,19 +113,26 @@ impl MyApp {
         self.new_db_confirm_password = String::new();
     }
     pub fn start_menu(&mut self, ui: &mut egui::Ui) {
-        //draw_unselected_db();
-        ui.horizontal(|ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(25.0);
+
             ui.heading("Rustpass");
-        });
-        ui.horizontal(|ui| {
-            if ui.button("Create New Database").clicked() {
+
+            ui.add_space(10.0);
+
+            if ui
+                .add_sized([150.0, 30.0], egui::Button::new("Create New Database"))
+                .clicked()
+            {
                 self.show_new_db_viewport = true;
             }
-            if ui.button("Open Database").clicked() {
-                //open_database
+
+            if ui
+                .add_sized([150.0, 30.0], egui::Button::new("Open Database"))
+                .clicked()
+            {
                 self.file_path = FileDialog::new()
                     .add_filter("database", &["enc"])
-                    .set_directory("/")
                     .pick_file();
                 self.pending_open = true;
             }
@@ -161,6 +168,9 @@ impl MyApp {
     pub fn new_entry(&mut self, ui: &mut egui::Ui) {
         ui.label("Title");
         ui.text_edit_singleline(&mut self.new_entry.title);
+        ui.label("Username");
+        ui.text_edit_singleline(&mut self.new_entry.username);
+
         ui.label("Password");
         ui.add(egui::TextEdit::singleline(&mut self.new_entry.password).password(true));
         if ui.button("Create").clicked() {
@@ -171,6 +181,7 @@ impl MyApp {
                     self.decrypt_all_entries();
 
                     self.new_entry.title.zeroize();
+                    self.new_entry.username.zeroize();
                     self.new_entry.password.zeroize();
                     self.viewstate = ViewState::DatabaseStartMenu;
                 }
@@ -185,9 +196,12 @@ impl MyApp {
     }
 
     pub fn load_edit_entry(&mut self, ui: &mut egui::Ui, index: usize) {
-        ui.label("Title");
+        ui.strong("Title");
         ui.text_edit_singleline(&mut self.new_entry.title);
-        ui.label("Password");
+        ui.strong("Username");
+        ui.text_edit_singleline(&mut self.new_entry.username);
+
+        ui.strong("Password");
         ui.add(
             egui::TextEdit::singleline(&mut self.new_entry.password).password(self.hide_password),
         );
@@ -195,8 +209,9 @@ impl MyApp {
             self.hide_password = !self.hide_password;
         }
         if ui.button("Change").clicked() {
-            self.update_entry(index, self.new_entry.clone());
+            let _ = self.update_entry(index, self.new_entry.clone());
             self.new_entry.title.zeroize();
+            self.new_entry.username.zeroize();
             self.new_entry.password.zeroize();
             self.hide_password = true;
             self.viewstate = ViewState::DatabaseStartMenu;
@@ -205,15 +220,47 @@ impl MyApp {
         }
         if ui.button("Cancel").clicked() {
             self.new_entry.title.zeroize();
+            self.new_entry.username.zeroize();
             self.new_entry.password.zeroize();
             self.hide_password = true;
             self.viewstate = ViewState::DatabaseStartMenu;
         }
     }
+
+    pub fn load_full_entry(&mut self, ui: &mut egui::Ui) {
+        ui.strong("Title");
+        ui.strong(&self.new_entry.title);
+        ui.strong("Username");
+        ui.strong(&self.new_entry.username);
+
+        ui.strong("Password");
+
+        let shown = if self.hide_password {
+            "•".repeat(self.new_entry.password.chars().count())
+        } else {
+            self.new_entry.password.clone()
+        };
+        ui.label(
+            egui::RichText::new(shown)
+                .strong()
+                .color(ui.style().visuals.strong_text_color()),
+        );
+        let view_label = if self.hide_password {
+            "View Password"
+        } else {
+            "Hide Password"
+        };
+        if ui.button(view_label).clicked() {
+            self.hide_password = !self.hide_password;
+        }
+    }
+
     pub fn load_entry_listing(&mut self, ui: &mut egui::Ui, index: usize) {
         let response = ui
             .scope_builder(
-                UiBuilder::new().id_salt(index).sense(Sense::click()),
+                UiBuilder::new()
+                    .id_salt(("entry", index))
+                    .sense(Sense::click()),
                 |ui| {
                     let response = ui.response();
                     let visuals = ui.style().interact(&response);
@@ -229,22 +276,49 @@ impl MyApp {
                             ui.horizontal(|ui| {
                                 ui.add_space(32.0);
 
-                                Label::new(
-                                    RichText::new(format!("{}", self.loaded_entries[index].title))
+                                ui.label(
+                                    RichText::new(&self.loaded_entries[index].title)
                                         .color(text_color)
                                         .size(16.0),
-                                )
-                                .selectable(false)
-                                .ui(ui);
+                                );
 
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         ui.add_space(8.0);
 
-                                        if ui.button("More").clicked() {}
+                                        ui.menu_button("More", |ui| {
+                                            if ui.button("Edit").clicked() {
+                                                self.full_entry_index = index;
+                                                self.new_entry =
+                                                    self.encrypted_payload_to_entry(index);
+                                                self.hide_password = true;
+                                                self.viewstate = ViewState::EditEntry;
+                                                ui.close();
+                                            }
 
-                                        if ui.button("Copy").clicked() {}
+                                            if ui.button("Delete").clicked() {
+                                                ui.close();
+                                            }
+                                        });
+                                        ui.menu_button("Copy", |ui| {
+                                            if ui.button("Copy Username").clicked() {
+                                                let entry = self.encrypted_payload_to_entry(index);
+
+                                                if !entry.username.is_empty() {
+                                                    ui.ctx().copy_text(entry.username);
+                                                }
+
+                                                ui.close();
+                                            }
+
+                                            if ui.button("Copy Password").clicked() {
+                                                let entry = self.encrypted_payload_to_entry(index);
+
+                                                ui.ctx().copy_text(entry.password);
+                                                ui.close();
+                                            }
+                                        });
                                     },
                                 );
                             });
@@ -255,6 +329,8 @@ impl MyApp {
 
         if response.clicked() {
             self.full_entry_index = index;
+            self.new_entry = self.encrypted_payload_to_entry(index);
+            self.hide_password = true;
             self.viewstate = ViewState::FullEntry;
         }
     }

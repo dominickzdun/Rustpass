@@ -1,11 +1,10 @@
-use crate::ChaCha20Poly1305;
 use crate::MyApp;
 use crate::PathBuf;
 use argon2::{
     Argon2, Params,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use chacha20poly1305::{AeadCore, Key, KeyInit, Nonce, aead::AeadMut};
+use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit, Nonce, aead::Aead};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Write, prelude::*};
 
@@ -20,16 +19,21 @@ pub struct EncryptedEntry {
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Entry {
     pub title: String,
+    pub username: String,
     pub password: String,
 }
 
 impl Entry {
-    pub fn new(title: String, password: String) -> Self {
-        Entry { title, password }
+    pub fn new(title: String, username: String, password: String) -> Self {
+        Entry {
+            title,
+            username,
+            password,
+        }
     }
 }
 
-pub fn create_db(name: &String, password: &String, file_path: &PathBuf) -> Key {
+pub fn create_db(password: &String, file_path: &PathBuf) -> Key {
     //let full_path = format!("{}/{}.enc", file_path_string, name);
     //let path = file_path.as_ref().expect("no file path provided");
 
@@ -60,7 +64,7 @@ pub fn create_db(name: &String, password: &String, file_path: &PathBuf) -> Key {
         .hash_password_into(password.as_bytes(), &salt_bytes, &mut key_bytes)
         .expect("key make fail");
 
-    return *Key::from_slice(&key_bytes);
+    *Key::from_slice(&key_bytes)
 }
 
 pub fn unlock_db(
@@ -108,7 +112,7 @@ pub fn unlock_db(
 
 impl MyApp {
     pub fn encrypted_payload_to_entry(&self, index: usize) -> Entry {
-        let mut cipher = ChaCha20Poly1305::new(&self.key);
+        let cipher = ChaCha20Poly1305::new(&self.key);
         let plaintext = cipher
             .decrypt(
                 Nonce::from_slice(&self.loaded_entries[index].nonce),
@@ -118,7 +122,7 @@ impl MyApp {
 
         let entry: Entry = serde_json::from_slice(&plaintext).expect("Failed to deserialize entry");
 
-        return entry;
+        entry
     }
     pub fn create_new_entry(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref path) = self.file_path {
@@ -127,7 +131,7 @@ impl MyApp {
             let mut lines: Vec<String> = reader.lines().collect::<Result<_, _>>()?;
 
             let payload_bytes = serde_json::to_vec(&self.new_entry)?;
-            let mut cipher = ChaCha20Poly1305::new(&self.key);
+            let cipher = ChaCha20Poly1305::new(&self.key);
             let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
             let cipher_payload = cipher.encrypt(&nonce, payload_bytes.as_ref());
 
@@ -154,13 +158,13 @@ impl MyApp {
     pub fn decrypt_all_entries(&mut self) {
         if let Some(ref path) = self.file_path {
             match OpenOptions::new().read(true).open(path) {
-                Ok(mut file) => {
+                Ok(file) => {
                     let reader = BufReader::new(file);
                     let mut lines = reader.lines();
 
                     lines.next(); // skips reading argon2 hash
 
-                    let mut cipher = ChaCha20Poly1305::new(&self.key);
+                    let cipher = ChaCha20Poly1305::new(&self.key);
                     for line_result in lines {
                         let line = line_result.unwrap();
 
@@ -211,7 +215,6 @@ impl MyApp {
         updated_entry: Entry,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref path) = self.file_path {
-            // 1. Read all lines from the file
             let file = File::open(path)?;
             let reader = BufReader::new(file);
             let mut lines: Vec<String> = reader.lines().collect::<Result<_, _>>()?;
@@ -221,7 +224,7 @@ impl MyApp {
             }
 
             let payload_bytes = serde_json::to_vec(&updated_entry)?;
-            let mut cipher = ChaCha20Poly1305::new(&self.key);
+            let cipher = ChaCha20Poly1305::new(&self.key);
             let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
             let cipher_payload = cipher.encrypt(&nonce, payload_bytes.as_ref());
 

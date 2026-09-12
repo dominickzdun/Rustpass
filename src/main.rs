@@ -2,10 +2,6 @@
 #![expect(rustdoc::missing_crate_level_docs)]
 
 use chacha20poly1305::Key;
-use chacha20poly1305::{
-    ChaCha20Poly1305, Nonce,
-    aead::{Aead, AeadCore, KeyInit},
-};
 use eframe::egui;
 use egui_file_dialog::FileDialog;
 use std::env;
@@ -43,6 +39,7 @@ enum ViewState {
     UnlockDatabase,
     DatabaseStartMenu,
     NewEntry,
+    EditEntry,
     FullEntry,
 }
 
@@ -89,7 +86,7 @@ impl MyApp {
             pending_create: false,
             pending_open: false,
             unlocked_db: false,
-            new_entry: Entry::new(String::new(), String::new()),
+            new_entry: Entry::new(String::new(), String::new(), String::new()),
             loaded_entries: Vec::new(),
             full_entry_index: 0,
             hide_password: true,
@@ -100,6 +97,7 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.set_pixels_per_point(1.75);
             self.header(ui);
             if self.viewstate == ViewState::StartMenu {
                 self.start_menu(ui);
@@ -109,34 +107,32 @@ impl eframe::App for MyApp {
                 self.unlocked_db(ui);
             } else if self.viewstate == ViewState::NewEntry {
                 self.new_entry(ui);
-            } else if self.viewstate == ViewState::FullEntry {
-                self.new_entry = self.encrypted_payload_to_entry(self.full_entry_index);
-
+            } else if self.viewstate == ViewState::EditEntry {
                 self.load_edit_entry(ui, self.full_entry_index);
+            } else if self.viewstate == ViewState::FullEntry {
+                self.load_full_entry(ui);
             }
 
             self.show_new_db_viewport_ui(ui); //automatically handles itself based on state
 
-            if self.pending_create || self.pending_open {
-                if let Some(path) = self.file_dialog.update(ui).picked() {
-                    self.file_path = Some(path.to_path_buf());
-                }
+            if (self.pending_create || self.pending_open)
+                && let Some(path) = self.file_dialog.update(ui).picked()
+            {
+                self.file_path = Some(path.to_path_buf());
             }
 
             if self.pending_create {
                 if let Some(path) = &self.file_path {
-                    self.key = database::create_db(&self.new_db_name, &self.new_db_password, path);
+                    self.key = database::create_db(&self.new_db_password, path);
                     self.reset_new_db_state();
                     self.file_path = None;
                 }
             } else if self.pending_open {
-                if let Some(path) = &self.file_path {
-                    self.password = String::new();
-                    self.unlocked_db = false;
-                    self.db_selected = true;
-                    self.viewstate = ViewState::UnlockDatabase;
-                    self.pending_open = false;
-                }
+                self.password = String::new();
+                self.unlocked_db = false;
+                self.db_selected = true;
+                self.viewstate = ViewState::UnlockDatabase;
+                self.pending_open = false;
             }
         });
     }
