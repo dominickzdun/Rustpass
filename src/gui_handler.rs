@@ -36,6 +36,7 @@ impl MyApp {
             });
             ui.menu_button("Entries", |ui| {
                 if ui.button("New Entry").clicked() && self.unlocked_db {
+                    self.reset_loaded_single_entry();
                     self.viewstate = NewEntry;
                     ui.close();
                 }
@@ -85,6 +86,11 @@ impl MyApp {
                             ui.text_edit_singleline(&mut self.new_db_name);
                             ui.horizontal(|ui| {
                                 if ui.button("Cancel").clicked() {
+                                    self.new_db_name = String::new();
+                                    self.new_db_page = 0;
+                                    self.new_db_password = String::new();
+                                    self.new_db_confirm_password = String::new();
+
                                     self.show_new_db_viewport = false;
                                 }
                                 if ui.button("Continue").clicked() {
@@ -210,19 +216,16 @@ impl MyApp {
         }
         if ui.button("Change").clicked() {
             let _ = self.update_entry(index, self.new_entry.clone());
-            self.new_entry.title.zeroize();
-            self.new_entry.username.zeroize();
-            self.new_entry.password.zeroize();
-            self.hide_password = true;
+            self.reset_loaded_single_entry();
             self.viewstate = ViewState::DatabaseStartMenu;
+
+            //reload all entry with newly added entry,
+            //probably not the most efficient...
             self.loaded_entries.clear();
             self.decrypt_all_entries();
         }
         if ui.button("Cancel").clicked() {
-            self.new_entry.title.zeroize();
-            self.new_entry.username.zeroize();
-            self.new_entry.password.zeroize();
-            self.hide_password = true;
+            self.reset_loaded_single_entry();
             self.viewstate = ViewState::DatabaseStartMenu;
         }
     }
@@ -253,9 +256,17 @@ impl MyApp {
         if ui.button(view_label).clicked() {
             self.hide_password = !self.hide_password;
         }
+        if ui.button("Go Back").clicked() {
+            self.reset_loaded_single_entry();
+            self.viewstate = ViewState::DatabaseStartMenu;
+        }
     }
 
     pub fn load_entry_listing(&mut self, ui: &mut egui::Ui, index: usize) {
+        // needed for delete function
+        if index >= self.loaded_entries.len() {
+            return;
+        }
         let response = ui
             .scope_builder(
                 UiBuilder::new()
@@ -298,6 +309,11 @@ impl MyApp {
                                             }
 
                                             if ui.button("Delete").clicked() {
+                                                self.delete_entry(index);
+                                                self.loaded_entries.clear();
+                                                // dont make it none then fill it X
+                                                // get decypted entires then replace loaded entries
+                                                self.decrypt_all_entries();
                                                 ui.close();
                                             }
                                         });

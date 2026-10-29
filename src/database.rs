@@ -9,6 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Write, prelude::*};
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 pub struct EncryptedEntry {
     pub title: String,
@@ -240,6 +241,41 @@ impl MyApp {
                     writeln!(temp_file, "{}", line)?;
                 }
             }
+            std::fs::rename(&temp_path, path)?;
+
+            Ok(())
+        } else {
+            Err("No file path selected".into())
+        }
+    }
+    pub fn reset_loaded_single_entry(&mut self) {
+        self.new_entry.title.zeroize();
+        self.new_entry.username.zeroize();
+        self.new_entry.password.zeroize();
+        self.hide_password = true;
+    }
+    pub fn delete_entry(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref path) = self.file_path {
+            let file = File::open(path)?;
+            let reader = BufReader::new(file);
+            let lines: Vec<String> = reader.lines().collect::<Result<_, _>>()?;
+
+            if index + 1 >= lines.len() {
+                return Err("Entry index out of bounds".into());
+            }
+
+            // Create temp file and write all lines EXCEPT the one at `index`
+            let temp_path = format!("{}.tmp", path.display());
+            {
+                let mut temp_file = File::create(&temp_path)?;
+                for (i, line) in lines.iter().enumerate() {
+                    if i != index + 1 {
+                        writeln!(temp_file, "{}", line)?;
+                    }
+                }
+            }
+
+            // Atomic rename replaces original
             std::fs::rename(&temp_path, path)?;
 
             Ok(())
